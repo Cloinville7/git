@@ -88,6 +88,7 @@ static int verbosity, deepen_relative, set_upstream, refetch;
 static int progress = -1;
 static int tags = TAGS_DEFAULT, update_shallow, deepen;
 static int atomic_fetch;
+static int fetched_any_objects = 1; // assume true: something was fetched, unless proven otherwise
 static enum transport_family family;
 static const char *depth;
 static const char *deepen_since;
@@ -1442,6 +1443,7 @@ static int fetch_and_consume_refs(struct display_state *display_state,
 	 */
 	ret = check_exist_and_connected(ref_map);
 	if (ret) {
+		fetched_any_objects = 1; // true: check_exist_and_connected said we're NOT already satisfied locally, so a real fetch is about to happen
 		trace2_region_enter("fetch", "fetch_refs", the_repository);
 		ret = transport_fetch_refs(transport, ref_map);
 		trace2_region_leave("fetch", "fetch_refs", the_repository);
@@ -1923,6 +1925,7 @@ static int do_fetch(struct transport *transport,
 	struct strmap rejected_refs = STRMAP_INIT;
 	int summary_width = 0;
 	int follow_remote_head;
+	fetched_any_objects = 0; // reset to false for this fetch attempt; flipped back to true below, only if actually needed
 
 	if (tags == TAGS_DEFAULT) {
 		if (transport->remote->fetch_tags == 2)
@@ -2906,7 +2909,7 @@ int cmd_fetch(int argc,
 		trace2_region_leave("fetch", "write-commit-graph", the_repository);
 	}
 
-	if (enable_auto_gc) {
+	if (enable_auto_gc && !(remote && !result && !fetched_any_objects)) { // skip maintenance if: user asked for negotiate-only, OR (single remote AND nothing was actually fetched)
 		if (refetch) {
 			/*
 			 * Hint auto-maintenance strongly to encourage repacking,
